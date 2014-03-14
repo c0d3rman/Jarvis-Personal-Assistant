@@ -12,12 +12,6 @@ $s->add(\*STDIN);
 
 #Music setup
 my $player = new Audio::Play::MPG123;
-$player->load("Audio/Aint Nobody Got Time For That.mp3");
-#establish tpf
-my $t = time;
-$player->poll(100);
-my $tpf = (time - $t)/100;
-$player->stop();
 
 #Output setup
 sub talk ($) {
@@ -45,6 +39,18 @@ while (1) {
 			case [qw(t toggle)]  {$player->pause()}
 			case [qw(s stop)]    {$player->state!=0 ? $player->stop() : talk("No song loaded!")}
 			case [qw(x exit)]    {exit}
+			case m/^open |^o /i  {
+				$in =~ /^open (.+)/i || $in =~ /^o (.+)/i;
+				my ($path, $filename, $rootfound) = ("", $1, 0);
+				find(sub {$rootfound ? $File::Find::prune = 1 : $rootfound = 1;($path, $filename) = ($File::Find::name, $_) if /$filename/i}, "/Applications/");
+				$filename =~ s/\....$//;
+				if ($path) {
+					`open '$path'`;
+					talk("Opening $filename");
+				} else {
+					talk("Could not find '$filename'");
+				}
+			}
 			case m/^play |^l /i  {
 				$in =~ /^play (.+)/i || $in =~ /^l (.+)/i;
 				my ($path, $filename) = ("", $1);
