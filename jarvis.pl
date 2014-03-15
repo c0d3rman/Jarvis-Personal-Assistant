@@ -1,11 +1,13 @@
 use Audio::Play::MPG123;
-use threads;
-use threads::shared;
 use Switch;
 use IO::Select;
-use Time::HiRes qw(time);
 use File::Find;
-use Term::ANSIScreen qw(:screen :cursor);
+use LWP::UserAgent;
+use URI::Encode "uri_encode";
+use JSON;
+
+#Web setup
+my $ua = LWP::UserAgent->new();
 
 #Input setup
 my $s = IO::Select->new();
@@ -13,31 +15,21 @@ $s->add(\*STDIN);
 
 #Music setup
 my $player = new Audio::Play::MPG123;
-$player->load("Audio/Aint Nobody Got Time For That.mp3");
-#establish tpf
-my $t = time;
-$player->poll(100);
-my $tpf = (time - $t)/100;
-$player->stop();
+#$player->load("Audio/Aint Nobody Got Time For That.mp3");
 
 #Output setup
-#cls;
-#locate 1, 1;
 sub talk ($) {
 	$stuff = shift;
-	$stuff =~ s/'/\\'/;
 	print "Jarvis: $stuff\n";
-	#$stuff =~ s/'/\\'/;
+	$stuff = "\Q$stuff";
 	if ($player->state == 2) {
 		$player->pause();
 		sleep 1;
-		system("say -v Daniel '$stuff' 2> /dev/null");
+		system(qq|say -v Daniel "$stuff" 2> /dev/null|);
 		$player->pause();
 	} else {
-		system("say -v Daniel '$stuff' 2> /dev/null");
+		system(qq|say -v Daniel "$stuff" 2> /dev/null|);
 	}
-	#cls;
-	#locate 1, 1;
 }
 
 my $refresh = 1;
@@ -47,17 +39,25 @@ while (1) {
 	sleep($refresh);
 	if ($s->can_read(.5)) {
 		chomp($in = <STDIN>);
-		switch (lc $in) {
-			case [qw(hi hello)]  {talk("Hello, sir!");}
-			case [qw(p pause)]   {$player->state==2 ? ($player->pause() and talk("Pausing song")) : ($player->state==1 ? talk("Already paused!") : talk("No song loaded!"))}
-			case [qw(u unpause)] {$player->state==1 ? ($player->pause() and talk("Unpausing song")) : ($player->state==2 ? talk("Already unpaused!") : talk("No song loaded!"))}
-			case [qw(t toggle)]  {$player->state==2 ? talk("Pausing song") : talk ("Unpausing song"); $player->pause()}
-			case [qw(s stop)]    {$player->state!=0 ? $player->stop() : talk("No song loaded!")}
-			case [qw(x exit)]    {exit}
-			case m/^say /i  {
-				$in =~ /^say (.+)/i;
-				talk($1);
+		my $contents = $ua->get(uri_encode("https://api.wit.ai/message?q=$in"), Authorization => 'Bearer QZU367LL45MEL3LEXOJK23KSGQ5EV2SL')->content();
+		$contents = decode_json $contents;
+		#print Dumper($contents);
+		#print "Intent: ".$contents->{'outcome'}{'intent'}."\n";
+		if ($contents->{'outcome'}{'confidence'} < 0.5) {
+			talk("I didn't understand that.");
+			talk("I was ".int($contents->{'outcome'}{'confidence'} * 100)."% sure your intent was ".$contents->{'outcome'}{'intent'}.".");
+			next;
+		}
+		
+		switch ($contents->{'outcome'}{'intent'}) {
+			case 'greet'   {talk("Hello, sir!");}
+			case 'pause'   {$player->state==2 ? ($player->pause() and talk("Pausing song")) : ($player->state==1 ? talk("Already paused!") : talk("No song loaded!"))}
+			case 'unpause' {$player->state==1 ? ($player->pause() and talk("Unpausing song")) : ($player->state==2 ? talk("Already unpaused!") : talk("No song loaded!"))}
+			case 'leave'   {exit}
+			case 'speak'   {
+				talk($contents->{'outcome'}{'entities'}{'message_body'}{'body'});
 			}
+=doc
 			case m/^open |^o /i  {
 				$in =~ /^open (.+)/i || $in =~ /^o (.+)/i;
 				my ($path, $filename, $rootfound) = ("", $1, 0);
@@ -70,9 +70,9 @@ while (1) {
 					talk("Could not find '$filename'");
 				}
 			}
-			case m/^play |^l /i  {
-				$in =~ /^play (.+)/i || $in =~ /^l (.+)/i;
-				my ($path, $filename) = ("", $1);
+=cut
+			case 'play'  {
+				my ($path, $filename) = ("", $contents->{'outcome'}{'entities'}{'song_name'}{'body'});
 				$player->stop() if ($player->state!=0);
 				find(sub {($path, $filename) = ($File::Find::name, $_) if /$filename/i}, "Audio/");
 				$filename =~ s/\....$//;
@@ -82,54 +82,6 @@ while (1) {
 					talk("could not find $filename");
 				}
 			}
-			case m/^(?:jump|skip) to  |^j /i  {
-				$in =~ /^(?:jump|skip) to (.+)/i || $in =~ /^j (.+)/i;
-				if ($player->state!=0) {
-					talk("Jumping to $1");
-					$player->jump($1/$tpf);
-				} else {
-					talk("No song loaded!");
-				}
-			}
 		}
 	}
 }
-
-#$player->poll(1) until $player->state == 0;
-
-
-__END__
-my @commands :shared;
-
-
-while (<STDIN>) {
-	switch ($_) {
-		case "pause" {
-			if ($player->paused
-		}
-	}
-}
-
-=doc
-#Music player
-threads->create(
-	sub {
-		
-	}
-)->join();
-=cut
-$player = new Audio::Play::MPG123;
-
-$player->load("Audio/Dead Giveaway.mp3");
-=doc
-print "Title: ",$player->title,"\n";
-print "Artist: ",$player->artist,"\n";
-print "Album: ",$player->album,"\n";
-print "Year: ",$player->year,"\n";
-print "Comment: ",$player->comment,"\n";
-print "Genre: ",$player->genre,"\n";
-=cut
-
-$player->poll(1) until $player->state == 0;
-
-#$player->load("http://x.y.z/kult.mp3");
